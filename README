@@ -22,10 +22,13 @@ SVDRP server, you might want to take a closer look at it. In particular
 as long as an SVDRP server cannot interact with multiple connections at
 a time, you will be able to share connections with other local plugins.
 
-TODO:
------
-Svdrpservice is not threadsafe yet! Only the VDR main loop should
-interact with plugin until locking has been implemented.
+Known issue:
+------------
+VDR 1.4.1-2 fixes a bug in the SVDRP server code which was introduced
+in VDR 1.2.2. The server ignored client side closes of the connection.
+The svdrpclient plugin is likely to trigger that bug as it will
+disconnect if the server doesn't reply in time. In the patches
+subdirectory you will find a patch for VDR 1.4.1-1 and older.
 
 Usage:
 ------
@@ -75,6 +78,6 @@ SvdrpService->Service("SvdrpConnection-v1.0", &conn);
 
 Debugging:
 ----------
-Compile with DEBUG=syslog if you want to see the commands and replys
-in the log. Use DEBUG=stderr (actually any value will do) to get
-output on the terminal where you started vdr.
+Compile with SVDRPSERVICE_DEBUG=syslog if you want to see the commands
+and replies in the log. Use SVDRPSERVICE_DEBUG=stderr (actually any
+value will do) to get output on the terminal where you started vdr.

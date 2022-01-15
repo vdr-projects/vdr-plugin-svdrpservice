@@ -49,8 +49,8 @@ DEFINES += -D_GNU_SOURCE -DPLUGIN_NAME_I18N='"$(PLUGIN)"'
 OBJS = $(PLUGIN).o connection.o
 
 ### Enable debugging?
-ifdef DEBUG
-ifeq ($(DEBUG),syslog)
+ifdef SVDRPSERVICE_DEBUG
+ifeq ($(SVDRPSERVICE_DEBUG),syslog)
 DEFINES += -DDEBUG=2
 else
 DEFINES += -DDEBUG=1

@@ -7,13 +7,14 @@
 #ifndef _SVDRPSERVICE_CONNECTION__H
 #define _SVDRPSERVICE_CONNECTION__H
 
+#include <vdr/thread.h>
 #include <vdr/tools.h>
 #include "svdrpservice.h"
 
 #define MAX_SVDRP_CONNECTIONS 8
 #define BUFFER_SIZE KILOBYTE(4)
 
-class cSvdrpConnection {
+class cSvdrpConnection: public cMutex {
 	private:
 		char*		serverIp;
 		unsigned short	serverPort;
@@ -25,7 +26,7 @@ class cSvdrpConnection {
 		bool		ReadLine();
 	public:
 		cSvdrpConnection(const char *ServerIp, unsigned short ServerPort, bool Shared);
-		~cSvdrpConnection();
+		virtual ~cSvdrpConnection();
 
 		bool		HasDestination(const char *ServerIp, unsigned short ServerPort) const;
 		bool		IsShared() const { return shared; };

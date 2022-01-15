@@ -18,10 +18,11 @@
 #define DEBUG_PRINTF(args...)
 #endif
 
+#define SVDRPSERVICE_READ_TIMEOUTMS 1500
+
 int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 	if (!ServerIp) {
-		errno = EINVAL;
-		LOG_ERROR;
+		esyslog("svdrpservice: No server IP specified");
 		return -1;
 	}
 
@@ -29,24 +30,24 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(ServerPort);
 	if (!::inet_aton(ServerIp, &server_addr.sin_addr)) {
-		LOG_ERROR;
+		esyslog("svdrpservice: Invalid server IP '%s'", ServerIp);
 		return -1;
 	}
 
 	int sock = ::socket(PF_INET, SOCK_STREAM, 0);
 	if (sock < 0) {
-		LOG_ERROR;
+		esyslog("svdrpservice: Error creating socket for connection to %s: %m", ServerIp);
 		return -1;
 	}
 	if (::connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
-		LOG_ERROR;
+		esyslog("svdrpservice: Unable to connect to %s:%hu: %m", ServerIp, ServerPort);
 		return -1;
 	}
 
 	// set nonblocking
 	int flags = ::fcntl(sock, F_GETFL, 0);
 	if (flags < 0 || ::fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
-		LOG_ERROR;
+		esyslog("svdrpservice: Unable to use nonblocking I/O for %s: %m", ServerIp);
 		::close(sock);
 		return -1;
 	}
@@ -86,11 +87,12 @@ bool cSvdrpConnection::Open() {
 		
 		// check for greeting
 		if (Receive() != 220) {
-			Close();
+			esyslog("svdrpservice: did not receive greeting from %s. Closing...", serverIp);
+			Abort();
 			return false;
 		}
 
-		isyslog("SvdrpService: connected to %s:%u", serverIp, serverPort);
+		isyslog("SvdrpService: connected to %s:%hu", serverIp, serverPort);
 	}
 	return true;
 }
@@ -111,13 +113,15 @@ bool cSvdrpConnection::Send(const char *Cmd, bool Reconnect) {
 
 	if (Reconnect && !file.IsOpen())
 		Open();
-	if (!file.IsOpen())
+	if (!file.IsOpen()) {
+		esyslog("svdrpservice: unable to send command to %s. Socket is closed", serverIp);
 		return false;
+	}
 
 	DEBUG_PRINTF("SEND %s", Cmd);
 	unsigned int len = ::strlen(Cmd);
 	if (safe_write(file, Cmd, len) < 0) {
-		LOG_ERROR;
+		esyslog("svdrpservice: error while writing to %s: %m", serverIp);
 		Abort();
 		return false;
 	}
@@ -137,7 +141,7 @@ unsigned short cSvdrpConnection::Receive(cList<cLine>* List) {
 				return (unsigned short) code;
 		}
 		else {
-			esyslog("SvdrpService: invalid reply from %s: '%s'", serverIp, buffer);
+			esyslog("svdrpservice: invalid reply from %s: '%s'", serverIp, buffer);
 			Close();
 			break;
 		}
@@ -152,8 +156,7 @@ bool cSvdrpConnection::ReadLine() {
 		return false;
 
 	unsigned int tail = 0;
-	bool ok = true;
-	while (ok && file.Ready(true)) {
+	while (cFile::FileReady(file, SVDRPSERVICE_READ_TIMEOUTMS)) {
 		unsigned char c;
 		int r = safe_read(file, &c, 1);
 		if (r > 0) {
@@ -167,10 +170,6 @@ bool cSvdrpConnection::ReadLine() {
 				DEBUG_PRINTF("READ %s\n", buffer);
 				return true;
 			}
-			else if (c == 0x04 && tail == 0) {
-				// end of file (only at beginning of line)
-				ok = false;
-			}
 			else if ((c <= 0x1F || c == 0x7F) && c != 0x09) {
 				// ignore control characters
 				}
@@ -179,20 +178,20 @@ bool cSvdrpConnection::ReadLine() {
 				buffer[tail] = 0;
 			}
 			else {
-				esyslog("SvdrpService: line too long in reply from %s: '%s'", serverIp, buffer);
-				ok = false;
+				esyslog("svdrpservice: line too long in reply from %s: '%s'", serverIp, buffer);
+				buffer[0] = 0;
+				Close();
+				return false;
 			}
 		}
-		else if (r < 0) {
-			esyslog("SvdrpService: lost connection to %s", serverIp);
-			ok = false;
-		}
 		else {
-			esyslog("SvdrpService: timeout waiting for reply from %s", serverIp);
-			ok = false;
+			esyslog("svdrpservice: lost connection to %s", serverIp);
+			buffer[0] = 0;
+			Abort();
+			return false;
 		}
 	}
-	
+	esyslog("svdrpservice: timeout waiting for reply from %s", serverIp);
 	buffer[0] = 0;
 	Abort();
 	return false;
