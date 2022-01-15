@@ -31,9 +31,15 @@ settings in every plugin.
 
 There's also a commandline option for the default server IP and port. Use
 something like that:
-  vdr ... -P 'svdrpservice 192.168.0.1:2001' ...
-The port is optional and defaults to 2001. So this is equivalent:
-  vdr ... -P 'svdrpservice 192.168.0.1' ...
+
+  vdr ... -P 'svdrpservice 192.0.2.1:6419' ...
+
+The port is optional and defaults to 6419. So this is equivalent:
+
+  vdr ... -P 'svdrpservice 192.0.2.1' ...
+
+Note that the default SVDRP port on VDR before 1.7.15 was 2001.
+
 When using the commandline option, the options for default server IP and
 port in the plugin setup will become read-only.
 
@@ -54,24 +60,9 @@ If the client VDR (the one running svdrpservice) and the server VDR (the
 one svdrpservice connects to) use different charsets, svdrpservice will do
 an on the fly conversion of everything it sends and receives.
 
-The feature relies on the server reporting its charset as part of the SVDRP
-greeting line. A VDR 1.6.1+ and 1.7.1+ will do this out of the box. In the
-patches subdirectory of the svdrpservice source distribution you will find
-patches for older VDR releases (vdr-1.5.3-1.6.0-svdrp_charset.diff and
-vdr-1.4.x-svdrp_charset.diff). Note that you only need to patch the server
-side. There's no need to patch the VDR instance running svdrpservice.
-
-Known issue:
-------------
-VDR 1.4.1-2 fixes a bug in the SVDRP server code which was introduced
-in VDR 1.2.2. The server ignored client side closes of the connection.
-The svdrpclient plugin is likely to trigger that bug as it will
-disconnect if the server doesn't reply in time. In the patches
-subdirectory you will find a patch for VDR 1.4.1-1 and older.
-
 Usage:
 ------
-Include the header file "svdrpservice.h" if you want to use svdrpservice
+Add a copy of header file "svdrpservice.h" if you want to use svdrpservice
 in your plugin. Call the "Service" method to interact with svdrpservice.
 There are two services available:
 1. SvdrpConnection gets or releases an SVDRP server connection
@@ -80,7 +71,7 @@ There are two services available:
 Typically your plugin will require the following code snippets:
 
 // include the svdrpservice header file
-#include "../svdrpservice/svdrpservice.h"
+#include "svdrpservice.h"
 
 // get the svdrpservice plugin
 cPlugin *svdrpservice = cPluginManager::GetPlugin("svdrpservice");
@@ -89,9 +80,11 @@ if (svdrpservice == NULL) // TODO: ERROR
 // get a connection handle. This will open the connection to the server
 // or for a shared connection simply add a referer to the existing one.
 SvdrpConnection_v1_0 conn;
-conn.serverIp = "192.168.0.1"; // you must not use 127.0.0.1
+conn.serverIp = "192.0.2.1";   // you must not use 127.0.0.1
                                // use "0.0.0.0" or "" for setup default
-conn.serverPort = 2001;        // 2001 for SVDRP, 2004 for VTP
+conn.serverPort = 6419;        // 6419 for SVDRP since VDR 1.7.15,
+                               // 2001 for SVDRP before VDR 1.7.15,
+                               // 2004 for VTP
                                // 0 to use svdrpservice setup default
 conn.shared = true;            // share connection with others
 conn.handle = -1;              // Handle < 0: get me a handle

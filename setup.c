@@ -7,7 +7,7 @@
  */
 
 #include <vdr/menuitems.h>
-#include "i18n.h"
+#include <vdr/i18n.h>
 #include "setup.h"
 
 cSvdrpServiceSetup SvdrpServiceSetup;
@@ -17,7 +17,7 @@ const char* cSvdrpServiceSetup::opt_serverPort = NULL;
 
 cSvdrpServiceSetup::cSvdrpServiceSetup() {
 	serverIp[0] = 0;
-	serverPort = 2001;
+	serverPort = 6419;
 	connectTimeout = 2;
 	readTimeout = 5;
 }
@@ -34,7 +34,7 @@ bool cSvdrpServiceSetup::Parse(const char *Name, const char *Value) {
 	if (!strcasecmp(Name, "ServerIp"))
 		strn0cpy(serverIp, opt_serverIp ? opt_serverIp : Value, sizeof(serverIp));
 	else if (!strcasecmp(Name, "ServerPort"))
-		serverPort = opt_serverIp ? (opt_serverPort ? atoi(opt_serverPort) : 2001) :  atoi(Value);
+		serverPort = opt_serverIp ? (opt_serverPort ? atoi(opt_serverPort) : 6419) :  atoi(Value);
 	else if (!strcasecmp(Name, "ConnectTimeout"))
 		connectTimeout = atoi(Value);
 	else if (!strcasecmp(Name, "ReadTimeout"))

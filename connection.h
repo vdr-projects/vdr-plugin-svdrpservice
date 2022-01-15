@@ -13,10 +13,6 @@
 
 #define MAX_SVDRP_CONNECTIONS 8
 
-#if VDRVERSNUM < 10503
-class cCharSetConv;
-#endif
-
 class cSvdrpConnection: public cMutex {
 	private:
 		char*		serverIp;

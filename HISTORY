@@ -1,7 +1,17 @@
 VDR Plugin 'svdrpservice' Revision History
 -----------------------------------------
 
+2013-06-07: Version 1.0.0
+
+- Updated Makefile for VDR 1.7.36 and dropped compatibility with older VDR
+  versions
+- Added Slovak translation (thanks to Milan Hrala)
+- Updated README. With the new VDR 1.7.34 Makefiles I think it's better to
+  include a copy of svdrpservice.h in every plugin using svdrpservice.
+- Updated default SVDRP port to new VDR default 6419.
+
 2008-09-25: Version 0.0.4
+
 - Italian translation (thanks to Diego Pierotto)
 - Commandline parameter for default server IP and port (suggested by
   kris@vdrportal)
@@ -15,6 +25,7 @@ VDR Plugin 'svdrpservice' Revision History
 - Configurable timeouts
 
 2007-03-06: Version 0.0.3
+
 - Dynamic buffer size
 - New setup options: default server IP and port
 - Silent change of service interface: serverIP and serverPort are now
@@ -24,6 +35,7 @@ VDR Plugin 'svdrpservice' Revision History
 - Non-blocking connect
 
 2006-07-24: Version 0.0.2
+
 - Added locking. svdrpservice is now threadsafe
 - Must use cFile::FileReady instead of cFile::Ready. Otherwise a
   command may return without delivering the reply
@@ -36,4 +48,5 @@ VDR Plugin 'svdrpservice' Revision History
   server ignoring client side close
 
 2006-06-01: Version 0.0.1
+
 - Initial revision.
