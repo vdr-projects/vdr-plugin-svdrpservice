@@ -1,6 +1,19 @@
 VDR Plugin 'svdrpservice' Revision History
 -----------------------------------------
 
+2008-09-25: Version 0.0.4
+- Italian translation (thanks to Diego Pierotto)
+- Commandline parameter for default server IP and port (suggested by
+  kris@vdrportal)
+- Automatic charset conversion (suggested by skiller2k1@vdrportal)
+  Includes patches for VDR < 1.6.1 to make it report its charset in the
+  SVDRP greeting message
+- Gettext support for VDR 1.5.7+
+  Credits to Udo Richter for his po218n.pl backward compatibility script
+- Accept empty responses (status code + space character)
+- No longer strip trailing whitespace from responses
+- Configurable timeouts
+
 2007-03-06: Version 0.0.3
 - Dynamic buffer size
 - New setup options: default server IP and port

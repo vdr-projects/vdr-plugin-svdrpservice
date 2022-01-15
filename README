@@ -29,11 +29,37 @@ port, so you don't have to enter these values in the setup of all
 plugins which use svdrpservice. Still you can override the default
 settings in every plugin.
 
+There's also a commandline option for the default server IP and port. Use
+something like that:
+  vdr ... -P 'svdrpservice 192.168.0.1:2001' ...
+The port is optional and defaults to 2001. So this is equivalent:
+  vdr ... -P 'svdrpservice 192.168.0.1' ...
+When using the commandline option, the options for default server IP and
+port in the plugin setup will become read-only.
+
 The default IP is used when the target IP of a new connection is either
 an empty string or the special IP 0.0.0.0. Likewise default port is used
 instead of destination port 0. If defaults have been used when opening
 a connection, the service call will return the actual values to the
 caller.
+
+There are also two timeout settings, one for the initial connect and
+one for reading replies. Increase these values carefully! A plugin which
+calls svdrpservice from the VDR main loop will block the main loop
+until the timeout expires when there's a problem with the connection.
+
+Automatic charset conversion:
+-----------------------------
+If the client VDR (the one running svdrpservice) and the server VDR (the
+one svdrpservice connects to) use different charsets, svdrpservice will do
+an on the fly conversion of everything it sends and receives.
+
+The feature relies on the server reporting its charset as part of the SVDRP
+greeting line. A VDR 1.6.1+ and 1.7.1+ will do this out of the box. In the
+patches subdirectory of the svdrpservice source distribution you will find
+patches for older VDR releases (vdr-1.5.3-1.6.0-svdrp_charset.diff and
+vdr-1.4.x-svdrp_charset.diff). Note that you only need to patch the server
+side. There's no need to patch the VDR instance running svdrpservice.
 
 Known issue:
 ------------

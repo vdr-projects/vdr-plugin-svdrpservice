@@ -30,8 +30,10 @@ TMPDIR = /tmp
 
 ### The version number of VDR's plugin API (taken from VDR's "config.h"):
 
-#VDRVERSION = $(shell grep 'define VDRVERSION ' $(VDRDIR)/config.h | awk '{ print $$3 }' | sed -e 's/"//g')
 APIVERSION = $(shell sed -ne '/define APIVERSION/s/^.*"\(.*\)".*$$/\1/p' $(VDRDIR)/config.h)
+
+### Test whether VDR has locale support
+VDRLOCALE = $(shell grep '^LOCALEDIR' $(VDRDIR)/Makefile)
 
 ### The name of the distribution archive:
 
@@ -47,6 +49,9 @@ DEFINES += -D_GNU_SOURCE -DPLUGIN_NAME_I18N='"$(PLUGIN)"'
 ### The object files (add further files here):
 
 OBJS = $(PLUGIN).o connection.o setup.o i18n.o
+
+.PHONY: all i18n dist clean
+all: libvdr-$(PLUGIN).so i18n
 
 ### Enable debugging?
 ifdef SVDRPSERVICE_DEBUG
@@ -71,13 +76,43 @@ $(DEPFILE): Makefile
 
 -include $(DEPFILE)
 
-### Targets:
+### Internationalization (I18N):
 
-all: libvdr-$(PLUGIN).so
+PODIR     = po
+
+ifneq ($(strip $(VDRLOCALE)),)
+
+LOCALEDIR = $(VDRDIR)/locale
+I18Npo    = $(wildcard $(PODIR)/*.po)
+I18Nmsgs  = $(addprefix $(LOCALEDIR)/, $(addsuffix /LC_MESSAGES/vdr-$(PLUGIN).mo, $(notdir $(foreach file, $(I18Npo), $(basename $(file))))))
+I18Npot   = $(PODIR)/$(PLUGIN).pot
+
+%.mo: %.po
+	msgfmt -c -o $@ $<
+
+$(I18Npot): $(wildcard *.c)
+	xgettext -C -cTRANSLATORS --no-wrap --no-location -k -ktr -ktrNOOP --msgid-bugs-address='<vdrdev@schmirler.de>' -o $@ $^
+
+%.po: $(I18Npot)
+	msgmerge -U --no-wrap --no-location --backup=none -q $@ $<
+	@touch $@
+
+$(I18Nmsgs): $(LOCALEDIR)/%/LC_MESSAGES/vdr-$(PLUGIN).mo: $(PODIR)/%.mo
+	@mkdir -p $(dir $@)
+	cp $< $@
+
+i18n: $(I18Nmsgs)
+
+else
+
+i18n:
+	@### nothing to do
+endif
+
+### Targets:
 
 libvdr-$(PLUGIN).so: $(OBJS)
 	$(CXX) $(CXXFLAGS) -shared $(OBJS) -o $@
-#	@cp $@ $(LIBDIR)/$@.$(VDRVERSION)
 	@cp $@ $(LIBDIR)/$@.$(APIVERSION)
 
 dist: clean
@@ -89,4 +124,5 @@ dist: clean
 	@echo Distribution package created as $(PACKAGE).tgz
 
 clean:
+	@-rm -f $(PODIR)/*.mo $(PODIR)/*.pot
 	@-rm -f $(OBJS) $(DEPFILE) *.so *.tgz core* *~

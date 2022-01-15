@@ -13,17 +13,24 @@
 
 #define MAX_SVDRP_CONNECTIONS 8
 
+#if VDRVERSNUM < 10503
+class cCharSetConv;
+#endif
+
 class cSvdrpConnection: public cMutex {
 	private:
 		char*		serverIp;
 		unsigned short	serverPort;
+		cCharSetConv	*convIn;
+		cCharSetConv	*convOut;
 		cFile		file;
 		char*		buffer;
 		unsigned int	bufSize;
 		int		refCount;
 		bool		shared;
-	protected:
-		bool		ReadLine();
+
+		int		Connect();
+		bool		ReadLine(int TimeoutMs);
 	public:
 		cSvdrpConnection(const char *ServerIp, unsigned short ServerPort, bool Shared);
 		virtual ~cSvdrpConnection();
@@ -39,9 +46,8 @@ class cSvdrpConnection: public cMutex {
 		int		DelRef() { return --refCount; }
 
 		bool		Send(const char *Cmd, bool Reconnect = true);
-		unsigned short	Receive(cList<cLine>* List = NULL);
+		unsigned short	Receive(cList<cLine>* List = NULL, bool Connecting = false);
 
-		static int	Connect(const char *ServerIp, unsigned short ServerPort);
 };
 
 #endif //_SVDRPSERVICE_CONNECTION__H

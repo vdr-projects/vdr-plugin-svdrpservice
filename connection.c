@@ -8,8 +8,11 @@
 #include <fcntl.h>
 #include <string.h>
 #include <stdlib.h>
+#include <ctype.h>
 
+#include <vdr/config.h>
 #include "connection.h"
+#include "setup.h"
 
 #if DEBUG == 1
 #define DEBUG_PRINTF(args...) fprintf(stderr, args)
@@ -19,36 +22,131 @@
 #define DEBUG_PRINTF(args...)
 #endif
 
-#define SVDRPSERVICE_READ_TIMEOUTMS 1500
+int charsetcmp(const char* s, const char* t)
+{
+	int ret;
+	do
+	{
+		while (*s && !isalnum(*s))
+			s++;
+		while (*t && !isalnum(*t))
+			t++;
+		ret = toupper(*t) - toupper(*s);
+	}
+	while (ret == 0 && *(t++) && *(s++));
+	return ret;
+}
 
-int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
-	if (!ServerIp) {
+#if VDRVERSNUM < 10503
+// cCharSetConv -------------------------------------------------------
+#include <iconv.h>
+
+class cCharSetConv {
+private:
+  iconv_t cd;
+  char *result;
+  size_t length;
+public:
+  cCharSetConv(const char *FromCode, const char *ToCode);
+  ~cCharSetConv();
+  const char *Convert(const char *From, char *To = NULL, size_t ToLength = 0);
+  static const char *SystemCharacterTable(void) { return I18nCharSets()[Setup.OSDLanguage]; }
+};
+
+cCharSetConv::cCharSetConv(const char *FromCode, const char *ToCode)
+{
+  if (!FromCode)
+     FromCode = "UTF-8";
+  if (!ToCode)
+     ToCode = "UTF-8";
+  cd = (FromCode && ToCode) ? iconv_open(ToCode, FromCode) : (iconv_t)-1;
+  result = NULL;
+  length = 0;
+}
+
+cCharSetConv::~cCharSetConv()
+{
+  free(result);
+  iconv_close(cd);
+}
+
+const char *cCharSetConv::Convert(const char *From, char *To, size_t ToLength)
+{
+  if (cd != (iconv_t)-1 && From && *From) {
+     char *FromPtr = (char *)From;
+     size_t FromLength = strlen(From);
+     char *ToPtr = To;
+     if (!ToPtr) {
+        length = max(length, FromLength * 2); // some reserve to avoid later reallocations
+        result = (char *)realloc(result, length);
+        ToPtr = result;
+        ToLength = length;
+        }
+     else if (!ToLength)
+        return From; // can't convert into a zero sized buffer
+     ToLength--; // save space for terminating 0
+     char *Converted = ToPtr;
+     while (FromLength > 0) {
+           if (iconv(cd, &FromPtr, &FromLength, &ToPtr, &ToLength) == size_t(-1)) {
+              if (errno == E2BIG || errno == EILSEQ && ToLength < 1) {
+                 if (To)
+                    break; // caller provided a fixed size buffer, but it was too small
+                 // The result buffer is too small, so increase it:
+                 size_t d = ToPtr - result;
+                 size_t r = length / 2;
+                 length += r;
+                 Converted = result = (char *)realloc(result, length);
+                 ToLength += r;
+                 ToPtr = result + d;
+                 }
+              if (errno == EILSEQ) {
+                 // A character can't be converted, so mark it with '?' and proceed:
+                 FromPtr++;
+                 FromLength--;
+                 *ToPtr++ = '?';
+                 ToLength--;
+                 }
+              else if (errno != E2BIG)
+                 return From; // unknown error, return original string
+              }
+           }
+     *ToPtr = 0;
+     return Converted;
+     }
+  return From;
+}
+#endif
+
+// cSvdrpConnection -------------------------------------------------------
+
+int cSvdrpConnection::Connect() {
+	if (!serverIp) {
 		esyslog("svdrpservice: No server IP specified");
 		return -1;
 	}
 
 	struct sockaddr_in server_addr;
 	server_addr.sin_family = AF_INET;
-	server_addr.sin_port = htons(ServerPort);
-	if (!::inet_aton(ServerIp, &server_addr.sin_addr)) {
-		esyslog("svdrpservice: Invalid server IP '%s'", ServerIp);
+	server_addr.sin_port = htons(serverPort);
+	if (!::inet_aton(serverIp, &server_addr.sin_addr)) {
+		esyslog("svdrpservice: Invalid server IP '%s'", serverIp);
 		return -1;
 	}
 
 	int sock = ::socket(PF_INET, SOCK_STREAM, 0);
 	if (sock < 0) {
-		esyslog("svdrpservice: Error creating socket for connection to %s: %m", ServerIp);
+		esyslog("svdrpservice: Error creating socket for connection to %s: %m", serverIp);
 		return -1;
 	}
 	// set nonblocking
 	int flags = ::fcntl(sock, F_GETFL, 0);
 	if (flags < 0 || ::fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
-		esyslog("svdrpservice: Unable to use nonblocking I/O for %s: %m", ServerIp);
+		esyslog("svdrpservice: Unable to use nonblocking I/O for %s: %m", serverIp);
 		return -1;
 	}
 	if (::connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
 		if (errno != EINPROGRESS) {
-			esyslog("svdrpservice: connect to %s:%hu failed: %m", ServerIp, ServerPort);
+			esyslog("svdrpservice: connect to %s:%hu failed: %m", serverIp, serverPort);
 			return -1;
 		}
 
@@ -56,7 +154,7 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 		fd_set fds;
 		struct timeval tv;
 		cTimeMs starttime;
-		int timeout = SVDRPSERVICE_READ_TIMEOUTMS;
+		int timeout = SvdrpServiceSetup.connectTimeout * 1000;
 		do {
 			FD_ZERO(&fds);
 			FD_SET(sock, &fds);
@@ -64,7 +162,7 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 			tv.tv_sec = timeout / 1000;
 			result = ::select(sock + 1, NULL, &fds, NULL, &tv);
 		} while (result == -1 && errno == EINTR &&
-				(timeout = SVDRPSERVICE_READ_TIMEOUTMS - starttime.Elapsed()) > 100);
+				(timeout = SvdrpServiceSetup.connectTimeout * 1000 - starttime.Elapsed()) > 100);
 
 		if (result == 0) {	// timeout
 			result = -1;
@@ -81,7 +179,7 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 		}
 
 		if (result != 0) {
-			esyslog("svdrpservice: Error connecting to %s:%hu: %m", ServerIp, ServerPort);
+			esyslog("svdrpservice: Error connecting to %s:%hu: %m", serverIp, serverPort);
 			::close(sock);
 			return -1;
 		}
@@ -90,7 +188,8 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 }
 
 cSvdrpConnection::cSvdrpConnection(const char *ServerIp, unsigned short ServerPort, bool Shared):
-		serverPort(ServerPort), refCount(0), shared(Shared) {
+		serverPort(ServerPort), convIn(NULL), convOut(NULL),
+		refCount(0), shared(Shared) {
 	serverIp = ServerIp ? ::strdup(ServerIp) : NULL;
 	bufSize = BUFSIZ;
 	buffer = MALLOC(char, bufSize);
@@ -98,6 +197,8 @@ cSvdrpConnection::cSvdrpConnection(const char *ServerIp, unsigned short ServerPo
 
 cSvdrpConnection::~cSvdrpConnection(void) {
 	Close();
+	delete convIn;
+	delete convOut;
 	free(serverIp);
 	free(buffer);
 }
@@ -113,7 +214,7 @@ bool cSvdrpConnection::Open() {
 		//TODO: make sure the connection is still alive (e.g. send STAT command)
 	}
 	if (!file.IsOpen()) {
-		int fd = Connect(serverIp, serverPort);
+		int fd = Connect();
 		if (fd < 0)
 			return false;
 
@@ -123,13 +224,36 @@ bool cSvdrpConnection::Open() {
 		}
 		
 		// check for greeting
-		if (Receive() != 220) {
+		cList<cLine> greeting;
+		if (Receive(&greeting, true) != 220) {
 			esyslog("svdrpservice: did not receive greeting from %s. Closing...", serverIp);
 			Abort();
 			return false;
 		}
 
-		isyslog("SvdrpService: connected to %s:%hu", serverIp, serverPort);
+		// do we need to convert between different charsets?
+		DELETENULL(convIn);
+		DELETENULL(convOut);
+		cString convMsg = "";
+		if (greeting.First() && greeting.First()->Text())
+		{
+			const char *l;
+			const char *r = strrchr(greeting.First()->Text(), ';');
+			// at least two semicolons found
+			if (r != strchr(greeting.First()->Text(), ';'))
+			{
+				r = skipspace(++r);
+				l = cCharSetConv::SystemCharacterTable() ? cCharSetConv::SystemCharacterTable() : "UTF-8";
+				if (charsetcmp(r, l) != 0)
+				{
+					convIn = new cCharSetConv(r, l);
+					convOut = new cCharSetConv(l, r);
+					convMsg = cString::sprintf(" (enabled charset conversion %s - %s)", r, l);
+				}
+			}
+		}
+
+		isyslog("SvdrpService: connected to %s:%hu%s", serverIp, serverPort, *convMsg);
 	}
 	return true;
 }
@@ -156,6 +280,8 @@ bool cSvdrpConnection::Send(const char *Cmd, bool Reconnect) {
 	}
 
 	DEBUG_PRINTF("SEND %s", Cmd);
+	if (convOut)
+		Cmd = convOut->Convert(Cmd);
 	unsigned int len = ::strlen(Cmd);
 	if (safe_write(file, Cmd, len) < 0) {
 		esyslog("svdrpservice: error while writing to %s: %m", serverIp);
@@ -165,15 +291,21 @@ bool cSvdrpConnection::Send(const char *Cmd, bool Reconnect) {
 	return true;
 }
 
-unsigned short cSvdrpConnection::Receive(cList<cLine>* List) {
-	while (ReadLine()) {
+unsigned short cSvdrpConnection::Receive(cList<cLine>* List, bool Connecting) {
+	int timeoutMs = (Connecting ? SvdrpServiceSetup.connectTimeout : SvdrpServiceSetup.readTimeout) * 1000;
+	while (ReadLine(timeoutMs)) {
 		char *tail;
 		long int code = ::strtol(buffer, &tail, 10);
 		if (tail - buffer == 3 &&
 				code >= 100 && code <= 999 &&
 				(*tail == ' ' || *tail =='-')) {
 			if (List)
-				List->Add(new cLine(buffer + 4));
+			{
+				const char* s = buffer + 4;
+				if (convIn)
+					s = convIn->Convert(s);
+				List->Add(new cLine(s));
+			}
 			if (*tail == ' ')
 				return (unsigned short) code;
 		}
@@ -188,20 +320,16 @@ unsigned short cSvdrpConnection::Receive(cList<cLine>* List) {
 	return 0;
 }
 
-bool cSvdrpConnection::ReadLine() {
+bool cSvdrpConnection::ReadLine(int TimeoutMs) {
 	if (!file.IsOpen())
 		return false;
 
 	unsigned int tail = 0;
-	while (cFile::FileReady(file, SVDRPSERVICE_READ_TIMEOUTMS)) {
+	while (cFile::FileReady(file, TimeoutMs)) {
 		unsigned char c;
 		int r = safe_read(file, &c, 1);
 		if (r > 0) {
 			if (c == '\n' || c == 0x00) {
-				// strip trailing whitespace:
-				while (tail > 0 && strchr(" \t\r\n", buffer[tail - 1]))
-					buffer[--tail] = 0;
-
 				// line complete, make sure the string is terminated
 				buffer[tail] = 0;
 				DEBUG_PRINTF("READ %s\n", buffer);
@@ -221,7 +349,6 @@ bool cSvdrpConnection::ReadLine() {
 					}
 				}
 				buffer[tail++] = c;
-				buffer[tail] = 0;
 			}
 		}
 		else {

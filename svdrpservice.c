@@ -17,7 +17,7 @@
 
 #define MAX_SVDRP_CONNECTIONS 8
 
-static const char *VERSION        = "0.0.3";
+static const char *VERSION        = "0.0.4";
 static const char *DESCRIPTION    = "SVDRP client";
 
 class cPluginSvdrpService : public cPlugin {
@@ -61,12 +61,28 @@ cPluginSvdrpService::~cPluginSvdrpService()
 
 const char *cPluginSvdrpService::CommandLineHelp(void)
 {
-  return NULL;
+	return "  IP[:PORT]  Default server IP and optional port (e.g. 192.168.0.1:2001).\n"
+	       "             If no port is given, the default SVDRP port 2001 is asumed.\n";
 }
 
 bool cPluginSvdrpService::ProcessArgs(int argc, char *argv[])
 {
-  return true;
+	for (int i = 1; i < argc; i++)
+	{
+  		if (*argv[i] == '-')
+		{
+			fprintf(stderr, "Plugin %s: unknown commandline argument %s\n", Name(), argv[i]);
+			return false;
+		}
+		cSvdrpServiceSetup::opt_serverIp = argv[i];
+		char *p = strchr(argv[i], ':');
+		if (p)
+		{
+			*p = 0;
+			cSvdrpServiceSetup::opt_serverPort = ++p;
+		}
+	}
+	return true;
 }
 
 bool cPluginSvdrpService::Initialize(void)
@@ -76,7 +92,9 @@ bool cPluginSvdrpService::Initialize(void)
 
 bool cPluginSvdrpService::Start(void)
 {
+#if VDRVERSNUM < 10507
   RegisterI18n(Phrases);
+#endif
   return true;
 }
 
