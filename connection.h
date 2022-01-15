@@ -12,14 +12,14 @@
 #include "svdrpservice.h"
 
 #define MAX_SVDRP_CONNECTIONS 8
-#define BUFFER_SIZE KILOBYTE(4)
 
 class cSvdrpConnection: public cMutex {
 	private:
 		char*		serverIp;
 		unsigned short	serverPort;
 		cFile		file;
-		char		buffer[BUFFER_SIZE];
+		char*		buffer;
+		unsigned int	bufSize;
 		int		refCount;
 		bool		shared;
 	protected:

@@ -12,10 +12,12 @@
 
 #include "svdrpservice.h"
 #include "connection.h"
+#include "setup.h"
+#include "i18n.h"
 
 #define MAX_SVDRP_CONNECTIONS 8
 
-static const char *VERSION        = "0.0.2";
+static const char *VERSION        = "0.0.3";
 static const char *DESCRIPTION    = "SVDRP client";
 
 class cPluginSvdrpService : public cPlugin {
@@ -74,6 +76,7 @@ bool cPluginSvdrpService::Initialize(void)
 
 bool cPluginSvdrpService::Start(void)
 {
+  RegisterI18n(Phrases);
   return true;
 }
 
@@ -92,12 +95,12 @@ cOsdObject *cPluginSvdrpService::MainMenuAction(void)
 
 cMenuSetupPage *cPluginSvdrpService::SetupMenu(void)
 {
-  return NULL;
+  return new cSvdrpServiceMenuSetup();;
 }
 
 bool cPluginSvdrpService::SetupParse(const char *Name, const char *Value)
 {
-  return false;
+  return SvdrpServiceSetup.Parse(Name, Value);
 }
 
 bool cPluginSvdrpService::Service(const char *Id, void *Data)
@@ -108,6 +111,10 @@ bool cPluginSvdrpService::Service(const char *Id, void *Data)
 		  SvdrpConnection_v1_0 *conn = (SvdrpConnection_v1_0 *) Data;
 		  connsMutex.Lock();
 		  if (conn->handle < 0) {
+			  if (conn->serverIp[0] == 0 || strcmp(conn->serverIp, "0.0.0.0") == 0)
+				  conn->serverIp = SvdrpServiceSetup.serverIp;
+			  if (conn->serverPort == 0)
+				  conn->serverPort = SvdrpServiceSetup.serverPort;
 			  if (conn->shared)
 				  conn->handle = FindSharedConnection(conn->serverIp, conn->serverPort);
 			  if (conn->handle < 0)
@@ -123,10 +130,9 @@ bool cPluginSvdrpService::Service(const char *Id, void *Data)
 			  }
 		  }
 		  else if (conn->handle < MAX_SVDRP_CONNECTIONS && connections[conn->handle]) {
-			  if (connections[conn->handle]->DelRef() == 0) {
+			  if (connections[conn->handle]->DelRef() == 0)
 				  DELETENULL(connections[conn->handle]);
-				  conn->handle = -1;
-			  }
+			  conn->handle = -1;
 		  }
 		  else {
 			  esyslog("svdrpservice: SvdrpConnection: Invalid handle %d", conn->handle);

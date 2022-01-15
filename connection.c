@@ -1,6 +1,7 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/select.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <unistd.h>
@@ -39,17 +40,51 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 		esyslog("svdrpservice: Error creating socket for connection to %s: %m", ServerIp);
 		return -1;
 	}
-	if (::connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
-		esyslog("svdrpservice: Unable to connect to %s:%hu: %m", ServerIp, ServerPort);
-		return -1;
-	}
-
 	// set nonblocking
 	int flags = ::fcntl(sock, F_GETFL, 0);
 	if (flags < 0 || ::fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
 		esyslog("svdrpservice: Unable to use nonblocking I/O for %s: %m", ServerIp);
-		::close(sock);
 		return -1;
+	}
+	if (::connect(sock, (struct sockaddr *) &server_addr, sizeof(server_addr)) < 0) {
+		if (errno != EINPROGRESS) {
+			esyslog("svdrpservice: connect to %s:%hu failed: %m", ServerIp, ServerPort);
+			return -1;
+		}
+
+		int result;
+		fd_set fds;
+		struct timeval tv;
+		cTimeMs starttime;
+		int timeout = SVDRPSERVICE_READ_TIMEOUTMS;
+		do {
+			FD_ZERO(&fds);
+			FD_SET(sock, &fds);
+			tv.tv_usec = (timeout % 1000) * 1000;
+			tv.tv_sec = timeout / 1000;
+			result = ::select(sock + 1, NULL, &fds, NULL, &tv);
+		} while (result == -1 && errno == EINTR &&
+				(timeout = SVDRPSERVICE_READ_TIMEOUTMS - starttime.Elapsed()) > 100);
+
+		if (result == 0) {	// timeout
+			result = -1;
+			errno = ETIMEDOUT;
+		}
+		else if (result == 1) {	// check socket for errors
+			int error;
+			socklen_t size = sizeof(error);
+			result = ::getsockopt(sock, SOL_SOCKET, SO_ERROR, &error, &size);
+			if (result == 0 && error != 0) {
+				result = -1;
+				errno = error;
+			}
+		}
+
+		if (result != 0) {
+			esyslog("svdrpservice: Error connecting to %s:%hu: %m", ServerIp, ServerPort);
+			::close(sock);
+			return -1;
+		}
 	}
 	return sock;
 }
@@ -57,12 +92,14 @@ int cSvdrpConnection::Connect(const char *ServerIp, unsigned short ServerPort) {
 cSvdrpConnection::cSvdrpConnection(const char *ServerIp, unsigned short ServerPort, bool Shared):
 		serverPort(ServerPort), refCount(0), shared(Shared) {
 	serverIp = ServerIp ? ::strdup(ServerIp) : NULL;
+	bufSize = BUFSIZ;
+	buffer = MALLOC(char, bufSize);
 }
 
 cSvdrpConnection::~cSvdrpConnection(void) {
 	Close();
-	if (serverIp)
-		free(serverIp);
+	free(serverIp);
+	free(buffer);
 }
 
 bool cSvdrpConnection::HasDestination(const char *ServerIp, unsigned short ServerPort) const {
@@ -173,15 +210,18 @@ bool cSvdrpConnection::ReadLine() {
 			else if ((c <= 0x1F || c == 0x7F) && c != 0x09) {
 				// ignore control characters
 				}
-			else if (tail < sizeof(buffer) - 1) {
+			else {
+				if (tail >= bufSize - 1) {
+					bufSize += BUFSIZ;
+					buffer = (char*) realloc(buffer, bufSize);
+					if (!buffer) {
+						esyslog("svdrpservice: unable to increase buffer size to %d byte", bufSize);
+						Close();
+						return false;
+					}
+				}
 				buffer[tail++] = c;
 				buffer[tail] = 0;
-			}
-			else {
-				esyslog("svdrpservice: line too long in reply from %s: '%s'", serverIp, buffer);
-				buffer[0] = 0;
-				Close();
-				return false;
 			}
 		}
 		else {

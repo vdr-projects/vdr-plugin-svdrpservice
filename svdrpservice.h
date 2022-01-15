@@ -19,9 +19,10 @@ class cLine: public cListObject {
 };
 
 struct SvdrpConnection_v1_0 {
-//in
+//in+out
 	cString		serverIp;
 	unsigned short	serverPort;
+//in
 	bool		shared;
 //in+out
 	int		handle;

@@ -22,6 +22,19 @@ SVDRP server, you might want to take a closer look at it. In particular
 as long as an SVDRP server cannot interact with multiple connections at
 a time, you will be able to share connections with other local plugins.
 
+Configuration:
+--------------
+In the plugin setup you can configure a default server IP and a default
+port, so you don't have to enter these values in the setup of all
+plugins which use svdrpservice. Still you can override the default
+settings in every plugin.
+
+The default IP is used when the target IP of a new connection is either
+an empty string or the special IP 0.0.0.0. Likewise default port is used
+instead of destination port 0. If defaults have been used when opening
+a connection, the service call will return the actual values to the
+caller.
+
 Known issue:
 ------------
 VDR 1.4.1-2 fixes a bug in the SVDRP server code which was introduced
@@ -51,11 +64,16 @@ if (svdrpservice == NULL) // TODO: ERROR
 // or for a shared connection simply add a referer to the existing one.
 SvdrpConnection_v1_0 conn;
 conn.serverIp = "192.168.0.1"; // you must not use 127.0.0.1
+                               // use "0.0.0.0" or "" for setup default
 conn.serverPort = 2001;        // 2001 for SVDRP, 2004 for VTP
+                               // 0 to use svdrpservice setup default
 conn.shared = true;            // share connection with others
 conn.handle = -1;              // Handle < 0: get me a handle
 SvdrpService->Service("SvdrpConnection-v1.0", &conn);
-if (conn.Handle < 0) // TODO: ERROR
+if (conn.handle < 0) // TODO: ERROR
+
+// if defaults have been used, conn now contains the actual values
+dsyslog("Connected to %s:%hu", *conn.serverIp, conn.serverPort);
 
 // now you can send your commands
 SvdrpCommand_v1_0 cmd;
@@ -72,7 +90,7 @@ if (cmd.responseCode != EXPECTED) // TODO: ERROR
 for (cLine *line = cmd.reply.First(); line; line = cmd.reply.Next(line))
    ...
 
-// Finally release the connection (Handle >= 0). This will close the
+// Finally release the connection (handle >= 0). This will close the
 // SVDRP connection unless an other plugin still uses it.
 SvdrpService->Service("SvdrpConnection-v1.0", &conn);
 
